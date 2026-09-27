@@ -37,6 +37,10 @@ interessa. A base fica **intacta**: nenhum artigo é reescrito por LLM.
 
 ## Pipeline
 
+![Pipeline do sistema](docs/pipeline.svg)
+
+O mesmo pipeline em texto, para quem for editar este arquivo:
+
 ```mermaid
 flowchart TD
     subgraph OFF["ETAPA OFFLINE · roda uma vez · src/indexar.py"]
@@ -97,6 +101,8 @@ src/
   validate_spec.py  confere e conserta a spec Vega-Lite (tipos faltantes;
                     categorias ordenadas, como meses, mantêm a ordem dos dados)
 app.py              interface (Streamlit)
+mostrar_traducao.py log passo a passo da tradução (para documentar o sistema)
+docs/pipeline.svg   diagrama do pipeline
 .streamlit/         tema da interface (cor principal, barra de ferramentas mínima)
 data/raw/           os 59 JSONs da base, intactos
 tests/
