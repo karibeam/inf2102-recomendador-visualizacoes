@@ -109,7 +109,11 @@ if r["achados_usados"]:
 
 with st.expander("Como o sistema chegou a essa recomendação"):
     st.markdown("**1. Pergunta traduzida para os termos da base**")
-    st.code(r["consulta"], language=None)
+    antes, depois = st.columns(2)
+    antes.caption("o que você escreveu")
+    antes.code(r["pergunta"], language=None, wrap_lines=True)
+    depois.caption("como a busca foi feita")
+    depois.code(r["consulta"], language=None, wrap_lines=True)
     st.markdown(f"**2. Os {len(r['achados'])} resultados mais parecidos** (texto original, sem reescrita)")
     for a in r["achados"]:
         st.markdown(f"**[{a['n']}]** {link_artigo(a['artigo'])}  \n"
