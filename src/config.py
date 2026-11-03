@@ -27,7 +27,14 @@ def _require(var: str) -> str:
 
 
 def get_chat():
-    """Modelo de chat. Temperatura 0 para a mesma pergunta dar a mesma resposta."""
+    """Modelo de chat, pedindo temperatura 0 (resposta mais estavel possivel).
+
+    ATENCAO: o gemini-3.5-flash-lite usa amostragem fixa e IGNORA esse pedido
+    ("uses fixed sampling defaults; the sampling parameter(s) temperature will
+    be ignored"). Logo, o sistema NAO e deterministico: a mesma pergunta pode
+    receber recomendacoes diferentes em execucoes diferentes. Veja
+    "Limitacoes conhecidas" no README.
+    """
     if provider() == "openai":
         from langchain_openai import ChatOpenAI
 

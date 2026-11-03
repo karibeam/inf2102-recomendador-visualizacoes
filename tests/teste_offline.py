@@ -13,7 +13,10 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from comum import confere
 
 import config
 
@@ -46,12 +49,6 @@ RECOMENDACAO = {
 
 def llm_falso(*respostas):
     return GenericFakeChatModel(messages=iter(AIMessage(content=json.dumps(r)) for r in respostas))
-
-
-def confere(descricao, condicao):
-    print(f"  {'OK   ' if condicao else 'FALHA'} {descricao}")
-    if not condicao:
-        raise SystemExit(1)
 
 
 print("1) base -> documentos")

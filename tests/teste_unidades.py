@@ -1,0 +1,177 @@
+"""Testa isoladamente as duas partes com mais ramificacoes de logica.
+
+- src/validate_spec.py: confere e conserta a spec Vega-Lite gerada pelo LLM;
+- src/indexar.py: os ajudantes que leem o formato da base (rankings
+  aninhados, nome da tarefa, descricao de cada design).
+
+Nao chama nenhuma API e nao toca no banco vetorial.
+
+    .venv/bin/python tests/teste_unidades.py
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from comum import caminho_src, confere
+
+caminho_src()
+
+import indexar
+import validate_spec
+
+BARRAS = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "data": {"values": [{"categoria": "A", "vendas": 10}, {"categoria": "B", "vendas": 20}]},
+    "mark": "bar",
+    "encoding": {"x": {"field": "categoria", "type": "nominal"},
+                 "y": {"field": "vendas", "type": "quantitative"}},
+}
+
+
+def spec_barras(**mudancas):
+    """Copia da spec valida, com os canais de `encoding` trocados."""
+    import copy
+
+    spec = copy.deepcopy(BARRAS)
+    spec["encoding"].update(mudancas)
+    return spec
+
+
+# --- validate_spec.validate --------------------------------------------------
+
+print("1) validate: o que e spec valida e o que nao e")
+confere("spec de barras completa passa", validate_spec.validate(BARRAS)[0])
+confere("texto no lugar da spec e recusado", validate_spec.validate("nao sou json")[0] is False)
+confere("spec sem 'mark' nem 'layer' e recusada",
+        validate_spec.validate({"encoding": {}})[0] is False)
+confere("'encoding' que nao e objeto e recusado",
+        validate_spec.validate({"mark": "bar", "encoding": []})[0] is False)
+confere("canal sem 'type' e recusado",
+        validate_spec.validate(spec_barras(y={"field": "vendas"}))[0] is False)
+confere("canal com 'value' em vez de 'type' e aceito",
+        validate_spec.validate(spec_barras(color={"value": "steelblue"}))[0])
+_, erros = validate_spec.validate(spec_barras(y={"field": "vendas"}))
+confere("o erro diz qual canal falhou", erros and "encoding.y" in erros[0])
+
+print("2) validate: o schema do Vega-Lite e consultado de fato")
+confere("marca inexistente ('barra') e recusada pelo schema",
+        validate_spec.validate({**BARRAS, "mark": "barra"})[0] is False)
+
+
+# --- validate_spec.repair ----------------------------------------------------
+
+print("3) repair: completa o 'type' que o LLM esquece")
+spec, corrigidos = validate_spec.repair(spec_barras(color={"field": "categoria"},
+                                                    size={"field": "vendas"}))
+confere("campo de texto vira 'nominal'", spec["encoding"]["color"]["type"] == "nominal")
+confere("campo de numero vira 'quantitative'", spec["encoding"]["size"]["type"] == "quantitative")
+confere("os dois canais sao relatados", sorted(corrigidos) == ["color=nominal", "size=quantitative"])
+confere("a spec consertada passa na validacao", validate_spec.validate(spec)[0])
+
+spec, corrigidos = validate_spec.repair(spec_barras(y={"field": "vendas", "type": "nominal"}))
+confere("canal que ja tem 'type' nao e mexido", spec["encoding"]["y"]["type"] == "nominal")
+confere("nada e relatado quando nada muda", corrigidos == [])
+
+spec, _ = validate_spec.repair(spec_barras(color={"field": "ativo"}))
+confere("campo ausente nos dados vira 'nominal'", spec["encoding"]["color"]["type"] == "nominal")
+
+spec, _ = validate_spec.repair(spec_barras(tooltip={"aggregate": "count"}))
+confere("canal sem 'field' e ignorado", "type" not in spec["encoding"]["tooltip"])
+
+confere("texto no lugar da spec nao quebra o repair",
+        validate_spec.repair("nao sou json") == ("nao sou json", []))
+
+print("4) repair: categorias ordenadas mantem a ordem dos dados")
+spec, corrigidos = validate_spec.repair(spec_barras(x={"field": "mes", "type": "ordinal"}))
+confere("canal ordinal recebe sort=None", spec["encoding"]["x"]["sort"] is None)
+confere("a correcao e relatada", corrigidos == ["x: ordem dos dados"])
+spec, _ = validate_spec.repair(spec_barras(x={"field": "mes", "type": "ordinal", "sort": "ascending"}))
+confere("sort escolhido pelo LLM e preservado", spec["encoding"]["x"]["sort"] == "ascending")
+
+
+# --- validate_spec.ensure_inline_data ---------------------------------------
+
+print("5) ensure_inline_data: a spec sempre tem dados")
+confere("spec sem 'data' recebe lista vazia",
+        validate_spec.ensure_inline_data({"mark": "bar"})["data"] == {"values": []})
+confere("dados existentes sao mantidos",
+        validate_spec.ensure_inline_data(BARRAS.copy())["data"]["values"][0]["vendas"] == 10)
+confere("dados passados de fora substituem os da spec",
+        validate_spec.ensure_inline_data({"mark": "bar"}, [{"a": 1}])["data"]["values"] == [{"a": 1}])
+
+
+# --- indexar: leitura do formato da base ------------------------------------
+
+print("6) ranking_em_texto: niveis alternam entre '>' (melhor) e '=' (empate)")
+confere("sem empate", indexar.ranking_em_texto(["E-1", "E-2", "E-3"]) == "E-1 > E-2 > E-3")
+confere("empate no meio",
+        indexar.ranking_em_texto([["E-1", "E-2"], "E-3"]) == "(E-1 = E-2) > E-3")
+confere("lista de um nivel so e desembrulhada",
+        indexar.ranking_em_texto([["E-1", "E-2"]]) == "E-1 > E-2")
+confere("um unico design", indexar.ranking_em_texto("E-1") == "E-1")
+
+print("7) tarefa_do_achado: o nome do achado carrega a tarefa")
+confere("'sort-2' -> 'sort'", indexar.tarefa_do_achado("sort-2") == "sort")
+confere("'retrieve-value-1' -> 'retrieve-value'",
+        indexar.tarefa_do_achado("retrieve-value-1") == "retrieve-value")
+confere("espacos viram hifens",
+        indexar.tarefa_do_achado("characterize distribution 3") == "characterize-distribution")
+confere("tarefa fora da lista vira 'general'", indexar.tarefa_do_achado("tempo-de-reacao") == "general")
+
+print("8) achatar: pega todos os ids, em qualquer aninhamento")
+confere("tres niveis", indexar.achatar([["E-1", ["E-2"]], "E-3"]) == ["E-1", "E-2", "E-3"])
+
+print("9) design_em_texto: marca e canais de cada design")
+linha = indexar.design_em_texto("E-1", {
+    "layers": [{"mark": "area-rect",
+                "encodings": [{"data-type": "quantitative", "channel": "length"},
+                              {"data-type": "nominal", "channel": "positionX"}]}],
+    "note": "Two bars are next to each other.",
+})
+confere("marca e codificacoes na linha",
+        linha.startswith("- E-1: mark area-rect; quantitative -> length; nominal -> positionX"))
+confere("a nota do artigo e preservada", 'note: "Two bars are next to each other."' in linha)
+confere("design sem camadas nao quebra", indexar.design_em_texto("E-9", {}) == "- E-9: ")
+
+
+# --- indexar: um achado -> um documento -------------------------------------
+
+print("10) documentos_do_artigo: o template do documento indexado")
+ARTIGO = {
+    "Title": "Graphical Perception",
+    "Designs": {
+        "E-1": {"layers": [{"mark": "area-rect",
+                            "encodings": [{"data-type": "quantitative", "channel": "length"},
+                                           {"data-type": "nominal-2", "channel": "positionX"}]}]},
+        "E-2": {"layers": [{"mark": "area-arc",
+                            "encodings": [{"data-type": "quantitative", "channel": "angle"}]}]},
+    },
+    "Results": {"Experimental": {"accuracy": {
+        "sort-1": {"rank": [["E-1", "E-2"]], "significance": {"pairs": [["E-1", "E-2"]]}},
+        "cluster-1": {"rank": ["E-2", "E-1"], "significance": []},
+    }}},
+}
+docs = list(indexar.documentos_do_artigo("Cleveland1984graphical.json", ARTIGO))
+confere("dois achados viraram dois documentos", len(docs) == 2)
+
+d = docs[0]
+confere("a fonte identifica o achado dentro do artigo",
+        d.metadata["fonte"] == "Cleveland1984graphical.json#Experimental/accuracy/sort-1")
+confere("a tarefa vai para os metadados (permite filtrar)", d.metadata["tarefa"] == "sort")
+linhas = d.page_content.splitlines()
+confere("o documento comeca pela tarefa", linhas[0] == "task: sort")
+confere("o sufixo numerico do tipo de dado e removido ('nominal-2' -> 'nominal')",
+        linhas[1] == "data types: nominal, quantitative")
+confere("a metrica e o grupo aparecem", linhas[2] == "metric: accuracy (experimental)")
+confere("o titulo do estudo aparece", linhas[3] == "study: Graphical Perception")
+confere("o ranking vem em texto", linhas[4] == "result, best to worst: E-1 > E-2")
+confere("significancia com pares -> 'yes'",
+        linhas[5] == "statistically significant differences: yes")
+confere("os designs comparados sao descritos", linhas[6] == "designs compared:" and len(linhas) == 9)
+
+confere("significancia como lista vazia -> 'not reported'",
+        "statistically significant differences: not reported" in docs[1].page_content)
+
+print("\nTUDO OK.")

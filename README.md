@@ -103,10 +103,15 @@ src/
 app.py              interface (Streamlit)
 mostrar_traducao.py log passo a passo da tradução (para documentar o sistema)
 docs/pipeline.svg   diagrama do pipeline
+docs/historico/     plano da v1, superado — documenta por que a v2 é assim
 .streamlit/         tema da interface (cor principal, barra de ferramentas mínima)
 data/raw/           os 59 JSONs da base, intactos
+requirements.txt      dependências do projeto (faixas abertas)
+requirements.lock.txt versões exatas do ambiente em que o sistema foi validado
 tests/
+  teste_unidades.py     testa isoladamente validate_spec.py e os ajudantes de indexar.py
   teste_offline.py      testa o pipeline inteiro sem gastar API
+  comum.py              ajudante compartilhado pelos testes (OK/FALHA)
   comparar_v1_v2.py     compara esta versão com a v1 nas 18 perguntas
   test_questions.md     perguntas de avaliação + gabarito aproximado
   resultados_v1.json    respostas da v1, para a comparação
@@ -141,6 +146,31 @@ Ou pelo terminal:
 .venv/bin/python src/recomendar.py "quero comparar as vendas de 5 categorias"
 ```
 
+## Testes
+
+Nenhum dos dois gasta chamada de API — dá para conferir o sistema sem chave:
+
+```bash
+.venv/bin/python tests/teste_unidades.py
+```
+
+```bash
+.venv/bin/python tests/teste_offline.py
+```
+
+O primeiro cobre as partes com mais lógica: a validação e o reparo da spec
+Vega-Lite (`type` faltante, categorias ordenadas) e a leitura do formato da base
+(rankings com empate aninhado, nome da tarefa, template do documento indexado).
+O segundo encaixa o pipeline inteiro com modelos falsos: base → documentos →
+banco vetorial → tradução → busca → recomendação → spec, incluindo a recusa de
+pergunta fora do escopo.
+
+Para reproduzir o ambiente exato em que foram validados:
+
+```bash
+.venv/bin/pip install -r requirements.lock.txt
+```
+
 ## Limitações conhecidas
 
 - **Séries temporais.** A base não tem o tipo de dado "temporal" nem uma tarefa de
@@ -149,8 +179,14 @@ Ou pelo terminal:
   da temperatura em 12 meses" às vezes recebem barras. Estudos que comparam linhas
   e barras (ex.: Zacks & Tversky, 1999) foram excluídos da revisão de Zeng et al.;
   estendê-la com eles é o próximo passo planejado.
-- **Variação do LLM.** A mesma pergunta pode receber recomendações diferentes em
-  execuções diferentes, principalmente quando a base cobre mal o caso.
+- **Variação do LLM — o sistema não é determinístico.** `src/config.py` pede
+  `temperature=0`, mas o `gemini-3.5-flash-lite` usa amostragem fixa e **ignora
+  esse pedido**; ele mesmo avisa, ao ser chamado: *"uses fixed sampling defaults;
+  the sampling parameter(s) temperature will be ignored"*. Por isso a mesma
+  pergunta pode receber recomendações diferentes em execuções diferentes,
+  principalmente quando a base cobre mal o caso. Trocar para um provedor que
+  respeite a temperatura (`LLM_PROVIDER=openai`) reduz a variação, mas o passo de
+  geração continua sendo amostragem — não um cálculo.
 - **Referências.** Os JSONs da base trazem só o título; autor e ano vêm do nome do
   arquivo (`Saket2018task.json` → "Saket (2018)"), sem os coautores.
 

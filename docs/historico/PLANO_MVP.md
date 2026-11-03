@@ -1,3 +1,22 @@
+> **DOCUMENTO HISTORICO — SUPERADO PELA v2. NAO DESCREVE O SISTEMA ATUAL.**
+>
+> Este foi o plano da primeira versao (v1). Ele propoe fechar o gap semantico
+> **reescrevendo a base**: um LLM transformaria cada um dos 240 achados em um
+> "card" em linguagem leiga, e um placar em Python decidiria o grafico.
+>
+> Essa arquitetura foi construida, avaliada e **abandonada**. Ela exigia varias
+> camadas de ajuste (pesos, amortecimento por artigo, piso de escopo) e
+> deixava a base dependente de uma reescrita por LLM.
+>
+> A v2 — o sistema que esta neste repositorio — faz o contrario: traduz **a
+> pergunta** para o vocabulario da base, em um passo, e mantem os artigos
+> intactos. A arquitetura atual esta no [README](../../README.md); a v1 esta
+> guardada na branch `v1-cards-placar`.
+>
+> Guardado aqui porque documenta por que a arquitetura atual e assim.
+
+---
+
 # Plano MVP — Sistema de Recomendação de Visualizações (RAG)
 
 ## 0. Diagnóstico do problema de similaridade (respondendo sua pergunta principal)
